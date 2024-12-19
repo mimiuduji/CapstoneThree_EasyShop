@@ -1,8 +1,8 @@
 package org.yearup.data.mysql;
 
 import org.springframework.stereotype.Component;
-import org.yearup.models.Product;
 import org.yearup.data.ProductDao;
+import org.yearup.models.Product;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
@@ -12,6 +12,7 @@ import java.util.List;
 
 @Component
 public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
+
     public MySqlProductDao(DataSource dataSource) {
         super(dataSource);
     }
@@ -19,42 +20,30 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
     @Override
     public List<Product> search(Integer categoryId, BigDecimal minPrice, BigDecimal maxPrice, String color) {
         List<Product> products = new ArrayList<>();
+        String sql = "SELECT * FROM products " +
+                "WHERE (category_id = ? OR ? = -1) " +
+                "AND (price >= ? OR ? = -1) " +
+                "AND (price <= ? OR ? = -1) " +
+                "AND (color = ? OR ? = '')";
 
-        StringBuilder sql = new StringBuilder("SELECT * FROM products WHERE 1 = 1");
-
-        // Dynamically build the query based on non-null parameters
-        if (categoryId != null) {
-            sql.append(" AND category_id = ?");
-        }
-        if (minPrice != null) {
-            sql.append(" AND price >= ?");
-        }
-        if (maxPrice != null) {
-            sql.append(" AND price <= ?");
-        }
-        if (color != null && !color.isEmpty()) {
-            sql.append(" AND color = ?");
-        }
+        categoryId = categoryId == null ? -1 : categoryId;
+        minPrice = minPrice == null ? BigDecimal.valueOf(-1) : minPrice;
+        maxPrice = maxPrice == null ? BigDecimal.valueOf(-1) : maxPrice;
+        color = color == null ? "" : color;
 
         try (Connection connection = getConnection()) {
-            PreparedStatement statement = connection.prepareStatement(sql.toString());
-
-            // Dynamically bind the parameters
-            int paramIndex = 1;
-            if (categoryId != null) {
-                statement.setInt(paramIndex++, categoryId);
-            }
-            if (minPrice != null) {
-                statement.setBigDecimal(paramIndex++, minPrice);
-            }
-            if (maxPrice != null) {
-                statement.setBigDecimal(paramIndex++, maxPrice);
-            }
-            if (color != null && !color.isEmpty()) {
-                statement.setString(paramIndex++, color);
-            }
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setInt(1, categoryId);
+            statement.setInt(2, categoryId);
+            statement.setBigDecimal(3, minPrice);
+            statement.setBigDecimal(4, minPrice);
+            statement.setBigDecimal(5, maxPrice);
+            statement.setBigDecimal(6, maxPrice);
+            statement.setString(7, color);
+            statement.setString(8, color);
 
             ResultSet row = statement.executeQuery();
+
             while (row.next()) {
                 Product product = mapRow(row);
                 products.add(product);
@@ -67,9 +56,8 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
     }
 
     @Override
-    public List<Product> listByCategoryId(int categoryId) {
+    public List<Product> findByCategoryId(int categoryId) {
         List<Product> products = new ArrayList<>();
-
         String sql = "SELECT * FROM products WHERE category_id = ?";
 
         try (Connection connection = getConnection()) {
@@ -92,6 +80,7 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
     @Override
     public Product getById(int productId) {
         String sql = "SELECT * FROM products WHERE product_id = ?";
+
         try (Connection connection = getConnection()) {
             PreparedStatement statement = connection.prepareStatement(sql);
             statement.setInt(1, productId);
@@ -104,6 +93,7 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+
         return null;
     }
 
@@ -113,7 +103,7 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
         try (Connection connection = getConnection()) {
-            PreparedStatement statement = connection.prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS);
+            PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
             statement.setString(1, product.getName());
             statement.setBigDecimal(2, product.getPrice());
             statement.setInt(3, product.getCategoryId());
@@ -128,21 +118,19 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
             if (rowsAffected > 0) {
                 ResultSet generatedKeys = statement.getGeneratedKeys();
                 if (generatedKeys.next()) {
-                    int productId = generatedKeys.getInt(1);
-                    return getById(productId);
+                    return getById(generatedKeys.getInt(1));
                 }
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+
         return null;
     }
 
     @Override
     public void update(int productId, Product product) {
-        String sql = "UPDATE products " +
-                "SET name = ?, price = ?, category_id = ?, description = ?, color = ?, image_url = ?, stock = ?, featured = ? " +
-                "WHERE product_id = ?";
+        String sql = "UPDATE products SET name = ?, price = ?, category_id = ?, description = ?, color = ?, image_url = ?, stock = ?, featured = ? WHERE product_id = ?";
 
         try (Connection connection = getConnection()) {
             PreparedStatement statement = connection.prepareStatement(sql);
@@ -176,7 +164,7 @@ public class MySqlProductDao extends MySqlDaoBase implements ProductDao {
         }
     }
 
-    protected static Product mapRow(ResultSet row) throws SQLException {
+    private Product mapRow(ResultSet row) throws SQLException {
         int productId = row.getInt("product_id");
         String name = row.getString("name");
         BigDecimal price = row.getBigDecimal("price");
